@@ -37,6 +37,8 @@ def generate_launch_description():
     moveit_share = get_package_share_directory("simple_arm_moveit_config")
 
     use_rviz = LaunchConfiguration("use_rviz")
+    use_perception = LaunchConfiguration("use_perception")
+    use_gui = LaunchConfiguration("use_gui")
     gazebo_gui = LaunchConfiguration("gui")
     auto_pick = LaunchConfiguration("auto_pick")
     pick_x = LaunchConfiguration("pick_x")
@@ -53,6 +55,7 @@ def generate_launch_description():
             " use_mock_hardware:=false",
             " use_gazebo:=true",
             " enable_gripper_plugin:=true",
+            " enable_sensors:=true",
             " controllers_file:=", controllers_file,
         ]),
         value_type=str,
@@ -71,6 +74,7 @@ def generate_launch_description():
     joint_limits = load_yaml("simple_arm_moveit_config", "config/joint_limits.yaml")
     ompl_pipeline = load_yaml("simple_arm_moveit_config", "config/ompl_planning.yaml")
     controllers = load_yaml("simple_arm_moveit_config", "config/moveit_controllers.yaml")
+    sensors_3d = load_yaml("simple_arm_gazebo", "config/sensors_3d.yaml")
 
     move_group_parameters = [
         robot_description,
@@ -79,10 +83,14 @@ def generate_launch_description():
         joint_limits,
         ompl_pipeline,
         controllers,
+        sensors_3d,
         {
             "use_sim_time": True,
             "planning_pipelines": ["ompl"],
             "default_planning_pipeline": "ompl",
+            "octomap_frame": "world",
+            "octomap_resolution": 0.03,
+            "max_range": 4.0,
             "allow_trajectory_execution": True,
             "moveit_manage_controllers": False,
             "trajectory_execution.allowed_execution_duration_scaling": 1.5,
@@ -115,7 +123,6 @@ def generate_launch_description():
         output="screen",
         parameters=[robot_description, {"use_sim_time": True}],
     )
-
     spawn_robot = Node(
         package="gazebo_ros",
         executable="spawn_entity.py",
@@ -169,6 +176,44 @@ def generate_launch_description():
         output="screen",
         parameters=[{"use_sim_time": True}],
     )
+    recognition_server = Node(
+        package="simple_arm_gazebo",
+        executable="object_recognition_server",
+        output="screen",
+        condition=IfCondition(use_perception),
+        parameters=[{"use_sim_time": True}],
+    )
+    pick_place_server = TimerAction(
+        period=8.0,
+        actions=[Node(
+            package="simple_arm_gazebo",
+            executable="pick_place_server",
+            output="screen",
+            condition=IfCondition(use_perception),
+            parameters=[
+                robot_description,
+                robot_description_semantic,
+                robot_description_kinematics,
+                joint_limits,
+                {"use_sim_time": True},
+            ],
+        )],
+    )
+    control_gui = TimerAction(
+        period=10.0,
+        actions=[Node(
+            package="simple_arm_gui",
+            executable="simple_arm_gui_node",
+            output="screen",
+            condition=IfCondition(use_gui),
+            parameters=[
+                robot_description,
+                robot_description_semantic,
+                robot_description_kinematics,
+                {"use_sim_time": True},
+            ],
+        )],
+    )
     rviz = Node(
         package="rviz2",
         executable="rviz2",
@@ -215,6 +260,8 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument("gui", default_value="true", description="Open Gazebo GUI"),
         DeclareLaunchArgument("use_rviz", default_value="true", description="Open RViz MoveIt panel"),
+        DeclareLaunchArgument("use_perception", default_value="true", description="Start sensor perception and task servers"),
+        DeclareLaunchArgument("use_gui", default_value="false", description="Open the Chinese Qt task console"),
         DeclareLaunchArgument("auto_pick", default_value="false", description="Run pick-place demo automatically"),
         DeclareLaunchArgument("pick_x", default_value="0.50", description="Pick position X in world frame"),
         DeclareLaunchArgument("pick_y", default_value="0.20", description="Pick position Y in world frame"),
@@ -229,6 +276,9 @@ def generate_launch_description():
         start_controllers,
         move_group,
         feedback,
+        recognition_server,
+        pick_place_server,
+        control_gui,
         rviz,
         pick_demo,
     ])

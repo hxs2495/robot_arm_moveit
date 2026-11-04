@@ -25,7 +25,8 @@ source install/setup.bash
 ```bash
 sudo apt update
 sudo apt install ros-humble-moveit ros-humble-ros2-control \
-  ros-humble-ros2-controllers ros-humble-moveit-kinematics
+  ros-humble-ros2-controllers ros-humble-moveit-kinematics \
+  ros-humble-moveit-ros-perception ros-humble-gazebo-plugins
 ```
 
 ## 启动仿真
@@ -137,4 +138,45 @@ ros2 topic echo /simple_arm/feedback/tool_pose
 
 ```bash
 ./scripts/run_gazebo.sh use_rviz:=false
+```
+
+## 三维感知与 GUI 抓取闭环
+
+Gazebo 模型现在包含固定式 RGB-D 深度相机和 3D 激光雷达。两路点云会由
+MoveIt 的 Occupancy Map Monitor 融合到 OctoMap；固定传感器链通过
+`/tf_static` 发布，六轴机械臂运动链通过 `/tf` 动态更新。
+
+一键启动 Gazebo、MoveIt、RViz、感知节点和中文抓取管理界面：
+
+```bash
+./scripts/run_gazebo_gui.sh
+```
+
+界面中的“智能抓取业务闭环”支持：
+
+1. 查看深度相机、3D 雷达和 OctoMap 在线状态。
+2. 从深度点云刷新并选择识别目标。
+3. 输入目标放置点的 world 坐标。
+4. 下发抓取任务，实时查看规划、接近、夹取、搬运和放置阶段。
+5. 在执行过程中取消任务。
+
+主要感知与业务接口：
+
+- `/simple_arm/sensors/depth_camera/image_raw`：RGB 图像。
+- `/simple_arm/sensors/depth_camera/depth/image_raw`：深度图像。
+- `/simple_arm/sensors/depth_camera/points`：RGB-D 点云。
+- `/simple_arm/sensors/lidar/points`：3D 激光雷达点云。
+- `/simple_arm/perception/detections`：标准 `vision_msgs/Detection3DArray` 识别结果。
+- `/simple_arm/perception/detect_objects`：刷新目标识别服务。
+- `/simple_arm/tasks/pick_place`：带阶段反馈和取消能力的抓放 Action。
+
+常用检查命令：
+
+```bash
+ros2 topic hz /simple_arm/sensors/depth_camera/points
+ros2 topic hz /simple_arm/sensors/lidar/points
+ros2 run tf2_ros tf2_echo world depth_camera_optical_frame
+ros2 run tf2_ros tf2_echo world lidar_link
+ros2 service call /simple_arm/perception/detect_objects \
+  simple_arm_interfaces/srv/DetectObjects "{refresh: true}"
 ```

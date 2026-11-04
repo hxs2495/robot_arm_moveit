@@ -26,4 +26,7 @@
   <disable_collisions link1="link_4" link2="link_5" reason="Adjacent"/>
   <disable_collisions link1="link_5" link2="link_6" reason="Adjacent"/>
   <disable_collisions link1="link_6" link2="tool0" reason="Adjacent"/>
+  <disable_collisions link1="sensor_mast_link" link2="depth_camera_link" reason="Adjacent"/>
+  <disable_collisions link1="sensor_mast_link" link2="lidar_link" reason="Adjacent"/>
+  <disable_collisions link1="world" link2="sensor_mast_link" reason="Adjacent"/>
 </robot>

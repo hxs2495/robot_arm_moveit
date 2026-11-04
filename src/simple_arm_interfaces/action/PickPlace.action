@@ -1,0 +1,9 @@
+simple_arm_interfaces/DetectedObject target
+geometry_msgs/PoseStamped place_pose
+float64 approach_height
+---
+bool success
+string message
+---
+string stage
+float32 progress

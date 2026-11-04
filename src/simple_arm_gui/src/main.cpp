@@ -1,8 +1,10 @@
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <memory>
 #include <string>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -10,6 +12,7 @@
 #include <QDateTime>
 #include <QDoubleSpinBox>
 #include <QFont>
+#include <QComboBox>
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -17,6 +20,7 @@
 #include <QMainWindow>
 #include <QMetaObject>
 #include <QPushButton>
+#include <QProgressBar>
 #include <QScrollArea>
 #include <QSlider>
 #include <QSpinBox>
@@ -28,8 +32,13 @@
 #include <QWidget>
 
 #include <moveit/move_group_interface/move_group_interface.h>
+#include <moveit_msgs/msg/planning_scene.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp_action/rclcpp_action.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <simple_arm_interfaces/action/pick_place.hpp>
+#include <simple_arm_interfaces/srv/detect_objects.hpp>
 
 namespace
 {
@@ -171,11 +180,13 @@ public:
   explicit MainWindow(rclcpp::Node::SharedPtr node) : node_(std::move(node))
   {
     setWindowTitle("机械臂智能控制中心");
-    resize(1180, 820);
-    setMinimumSize(980, 720);
+    resize(1220, 980);
+    setMinimumSize(1040, 820);
     buildInterface();
     applyStyle();
     createJointStateSubscription();
+    createSensorSubscriptions();
+    createTaskClients();
     startMoveItWorker();
     appendLog("界面已启动，正在等待机械臂状态和 MoveIt 服务");
   }
@@ -353,6 +364,73 @@ private:
     connect(execute_button_, &QPushButton::clicked, this, &MainWindow::requestExecute);
     connect(stop_button_, &QPushButton::clicked, this, &MainWindow::requestStop);
 
+    auto* task_group = new QGroupBox("智能抓取业务闭环  ·  感知识别 → 目标确认 → 抓取放置");
+    auto* task_grid = new QGridLayout(task_group);
+    task_grid->setHorizontalSpacing(12);
+    task_grid->setVerticalSpacing(10);
+
+    depth_status_ = new QLabel("● 深度相机：等待数据");
+    lidar_status_ = new QLabel("● 3D 雷达：等待数据");
+    octomap_status_ = new QLabel("● OctoMap：等待地图");
+    depth_status_->setObjectName("sensorBadge");
+    lidar_status_->setObjectName("sensorBadge");
+    octomap_status_->setObjectName("sensorBadge");
+    auto* sensor_row = new QHBoxLayout;
+    sensor_row->addWidget(depth_status_);
+    sensor_row->addWidget(lidar_status_);
+    sensor_row->addWidget(octomap_status_);
+    sensor_row->addStretch();
+    task_grid->addLayout(sensor_row, 0, 0, 1, 6);
+
+    detect_button_ = new QPushButton("刷新识别目标");
+    detect_button_->setObjectName("primaryButton");
+    target_combo_ = new QComboBox;
+    target_combo_->setMinimumWidth(210);
+    target_pose_label_ = new QLabel("尚未选择目标");
+    target_pose_label_->setObjectName("targetPose");
+    task_grid->addWidget(new QLabel("抓取目标："), 1, 0);
+    task_grid->addWidget(target_combo_, 1, 1);
+    task_grid->addWidget(detect_button_, 1, 2);
+    task_grid->addWidget(target_pose_label_, 1, 3, 1, 3);
+
+    place_x_spin_ = new QDoubleSpinBox;
+    place_y_spin_ = new QDoubleSpinBox;
+    place_z_spin_ = new QDoubleSpinBox;
+    for (auto* spin : {place_x_spin_, place_y_spin_, place_z_spin_}) {
+      spin->setRange(-1.5, 1.5);
+      spin->setDecimals(3);
+      spin->setSingleStep(0.02);
+      spin->setSuffix(" m");
+    }
+    place_x_spin_->setValue(0.50);
+    place_y_spin_->setValue(-0.20);
+    place_z_spin_->setValue(0.395);
+    task_grid->addWidget(new QLabel("放置 X："), 2, 0);
+    task_grid->addWidget(place_x_spin_, 2, 1);
+    task_grid->addWidget(new QLabel("放置 Y："), 2, 2);
+    task_grid->addWidget(place_y_spin_, 2, 3);
+    task_grid->addWidget(new QLabel("放置 Z："), 2, 4);
+    task_grid->addWidget(place_z_spin_, 2, 5);
+
+    start_task_button_ = new QPushButton("下发抓取任务");
+    start_task_button_->setObjectName("successButton");
+    cancel_task_button_ = new QPushButton("取消抓取任务");
+    cancel_task_button_->setObjectName("stopButton");
+    task_progress_ = new QProgressBar;
+    task_progress_->setRange(0, 100);
+    task_progress_->setValue(0);
+    task_progress_->setFormat("等待任务");
+    task_grid->addWidget(start_task_button_, 3, 0, 1, 2);
+    task_grid->addWidget(cancel_task_button_, 3, 2);
+    task_grid->addWidget(task_progress_, 3, 3, 1, 3);
+    root->addWidget(task_group);
+
+    connect(detect_button_, &QPushButton::clicked, this, &MainWindow::requestObjectDetection);
+    connect(start_task_button_, &QPushButton::clicked, this, &MainWindow::sendPickPlaceTask);
+    connect(cancel_task_button_, &QPushButton::clicked, this, &MainWindow::cancelPickPlaceTask);
+    connect(target_combo_, qOverload<int>(&QComboBox::currentIndexChanged),
+      this, [this](int index) { updateSelectedTarget(index); });
+
     auto* log_group = new QGroupBox("系统运行日志");
     auto* log_layout = new QVBoxLayout(log_group);
     log_view_ = new QTextEdit;
@@ -410,6 +488,16 @@ private:
       QPushButton#successButton:hover { background: #0d9485; }
       QPushButton#stopButton { color: white; background: #a92f43; border-color: #d14b5e; }
       QPushButton#stopButton:hover { background: #c33a50; }
+      QComboBox { color: #f1f7ff; background: #16263a; border: 1px solid #304966;
+                  border-radius: 6px; padding: 7px 10px; }
+      QComboBox QAbstractItemView { background: #16263a; color: #f1f7ff;
+                                    selection-background-color: #168fa8; }
+      QLabel#sensorBadge { color: #f0c66a; background: #302817; border: 1px solid #66552b;
+                           border-radius: 10px; padding: 4px 9px; }
+      QLabel#targetPose { color: #64dbe8; font-family: "Noto Sans Mono", monospace; }
+      QProgressBar { color: #dce7f5; background: #0b1522; border: 1px solid #304966;
+                     border-radius: 6px; text-align: center; min-height: 25px; }
+      QProgressBar::chunk { background: #138d7e; border-radius: 5px; }
       QTextEdit { color: #a9d9dc; background: #080f19; border: 1px solid #21334a;
                   border-radius: 6px; font-family: "Noto Sans Mono", monospace; padding: 8px; }
       QScrollBar:vertical { background: #0d1725; width: 9px; border-radius: 4px; }
@@ -470,6 +558,212 @@ private:
         QMetaObject::invokeMethod(this, [this, values]() { updateJointState(values); },
           Qt::QueuedConnection);
       });
+  }
+
+  void createSensorSubscriptions()
+  {
+    depth_cloud_subscription_ = node_->create_subscription<sensor_msgs::msg::PointCloud2>(
+      "/simple_arm/sensors/depth_camera/points", rclcpp::SensorDataQoS(),
+      [this](sensor_msgs::msg::PointCloud2::ConstSharedPtr) { depth_seen_.store(true); });
+    lidar_cloud_subscription_ = node_->create_subscription<sensor_msgs::msg::PointCloud2>(
+      "/simple_arm/sensors/lidar/points", rclcpp::SensorDataQoS(),
+      [this](sensor_msgs::msg::PointCloud2::ConstSharedPtr) { lidar_seen_.store(true); });
+    planning_scene_subscription_ = node_->create_subscription<moveit_msgs::msg::PlanningScene>(
+      "/monitored_planning_scene", 10,
+      [this](moveit_msgs::msg::PlanningScene::ConstSharedPtr scene) {
+        if (!scene->world.octomap.octomap.data.empty()) {
+          octomap_seen_.store(true);
+        }
+      });
+    auto* sensor_timer = new QTimer(this);
+    connect(sensor_timer, &QTimer::timeout, this, &MainWindow::refreshSensorStatus);
+    sensor_timer->start(500);
+  }
+
+  void createTaskClients()
+  {
+    detection_client_ = node_->create_client<simple_arm_interfaces::srv::DetectObjects>(
+      "/simple_arm/perception/detect_objects");
+    pick_place_client_ = rclcpp_action::create_client<simple_arm_interfaces::action::PickPlace>(
+      node_, "/simple_arm/tasks/pick_place");
+    refreshTaskControls();
+  }
+
+  void requestObjectDetection()
+  {
+    if (!detection_client_->service_is_ready()) {
+      appendLog("目标识别服务尚未就绪，请确认 Gazebo 感知节点已启动");
+      return;
+    }
+    detect_button_->setEnabled(false);
+    appendLog("正在请求深度点云目标识别……");
+    auto request = std::make_shared<simple_arm_interfaces::srv::DetectObjects::Request>();
+    request->refresh = true;
+    detection_client_->async_send_request(
+      request,
+      [this](rclcpp::Client<simple_arm_interfaces::srv::DetectObjects>::SharedFuture future) {
+        const auto response = future.get();
+        QMetaObject::invokeMethod(this, [this, response]() {
+          detect_button_->setEnabled(!task_busy_);
+          detected_objects_ = response->objects;
+          target_combo_->blockSignals(true);
+          target_combo_->clear();
+          for (const auto& object : detected_objects_) {
+            target_combo_->addItem(
+              QString::fromStdString(object.class_name) +
+              QString("  [%1%]").arg(static_cast<int>(object.confidence * 100.0F)));
+          }
+          target_combo_->blockSignals(false);
+          if (response->success && !detected_objects_.empty()) {
+            target_combo_->setCurrentIndex(0);
+            updateSelectedTarget(0);
+          } else {
+            target_pose_label_->setText("未识别到可抓取目标");
+          }
+          appendLog(QString::fromStdString(response->message));
+          refreshTaskControls();
+        }, Qt::QueuedConnection);
+      });
+  }
+
+  void updateSelectedTarget(int index)
+  {
+    if (index < 0 || static_cast<std::size_t>(index) >= detected_objects_.size()) {
+      target_pose_label_->setText("尚未选择目标");
+      refreshTaskControls();
+      return;
+    }
+    const auto& object = detected_objects_[static_cast<std::size_t>(index)];
+    target_pose_label_->setText(
+      QString("world  X %1  Y %2  Z %3 m")
+        .arg(object.pose.position.x, 0, 'f', 3)
+        .arg(object.pose.position.y, 0, 'f', 3)
+        .arg(object.pose.position.z, 0, 'f', 3));
+    refreshTaskControls();
+  }
+
+  void sendPickPlaceTask()
+  {
+    const int index = target_combo_->currentIndex();
+    if (index < 0 || static_cast<std::size_t>(index) >= detected_objects_.size()) {
+      appendLog("请先刷新识别并选择抓取目标");
+      return;
+    }
+    if (!pick_place_client_->action_server_is_ready()) {
+      appendLog("抓取任务服务器尚未就绪");
+      return;
+    }
+
+    simple_arm_interfaces::action::PickPlace::Goal goal;
+    goal.target = detected_objects_[static_cast<std::size_t>(index)];
+    goal.place_pose.header.stamp = node_->now();
+    goal.place_pose.header.frame_id = "world";
+    goal.place_pose.pose.position.x = place_x_spin_->value();
+    goal.place_pose.pose.position.y = place_y_spin_->value();
+    goal.place_pose.pose.position.z = place_z_spin_->value();
+    goal.place_pose.pose.orientation.w = 1.0;
+    goal.approach_height = 0.06;
+
+    using PickPlace = simple_arm_interfaces::action::PickPlace;
+    rclcpp_action::Client<PickPlace>::SendGoalOptions options;
+    options.goal_response_callback =
+      [this](rclcpp_action::ClientGoalHandle<PickPlace>::SharedPtr handle) {
+        QMetaObject::invokeMethod(this, [this, handle]() {
+          active_task_goal_ = handle;
+          if (!handle) {
+            task_busy_ = false;
+            task_progress_->setFormat("任务被服务器拒绝");
+            appendLog("抓取任务被服务器拒绝");
+          } else {
+            appendLog("抓取任务已受理，开始执行");
+          }
+          refreshTaskControls();
+        }, Qt::QueuedConnection);
+      };
+    options.feedback_callback =
+      [this](
+        rclcpp_action::ClientGoalHandle<PickPlace>::SharedPtr,
+        const std::shared_ptr<const PickPlace::Feedback> feedback) {
+        const QString stage = QString::fromStdString(feedback->stage);
+        const int progress = static_cast<int>(std::round(feedback->progress * 100.0F));
+        QMetaObject::invokeMethod(this, [this, stage, progress]() {
+          task_progress_->setValue(progress);
+          task_progress_->setFormat(stage + QString("  %1%").arg(progress));
+          appendLog("任务阶段：" + stage);
+        }, Qt::QueuedConnection);
+      };
+    options.result_callback =
+      [this](const rclcpp_action::ClientGoalHandle<PickPlace>::WrappedResult& wrapped) {
+        const bool success =
+          wrapped.code == rclcpp_action::ResultCode::SUCCEEDED &&
+          wrapped.result && wrapped.result->success;
+        const QString message = wrapped.result ?
+          QString::fromStdString(wrapped.result->message) : "任务未返回结果";
+        QMetaObject::invokeMethod(this, [this, success, message]() {
+          task_busy_ = false;
+          active_task_goal_.reset();
+          task_progress_->setValue(success ? 100 : 0);
+          task_progress_->setFormat(success ? "任务完成" : "任务结束");
+          appendLog((success ? "抓取成功：" : "抓取未完成：") + message);
+          detected_objects_.clear();
+          target_combo_->clear();
+          target_pose_label_->setText("请重新识别目标");
+          refreshTaskControls();
+        }, Qt::QueuedConnection);
+      };
+
+    task_busy_ = true;
+    task_progress_->setValue(1);
+    task_progress_->setFormat("正在提交任务");
+    appendLog(
+      QString("下发抓取任务，放置点：(X %1, Y %2, Z %3) m")
+        .arg(place_x_spin_->value(), 0, 'f', 3)
+        .arg(place_y_spin_->value(), 0, 'f', 3)
+        .arg(place_z_spin_->value(), 0, 'f', 3));
+    refreshTaskControls();
+    pick_place_client_->async_send_goal(goal, options);
+  }
+
+  void cancelPickPlaceTask()
+  {
+    if (!active_task_goal_) {
+      appendLog("当前没有可取消的抓取任务");
+      return;
+    }
+    pick_place_client_->async_cancel_goal(active_task_goal_);
+    task_progress_->setFormat("正在取消任务……");
+    appendLog("已发送抓取任务取消请求");
+  }
+
+  void refreshSensorStatus()
+  {
+    const auto update_badge = [](QLabel* label, bool ready, const QString& ready_text,
+      const QString& waiting_text) {
+        label->setText(ready ? "● " + ready_text : "● " + waiting_text);
+        label->setStyleSheet(ready ?
+          "color:#5de2a5; background:#12382f; border:1px solid #266b55;"
+          "border-radius:10px; padding:4px 9px;" :
+          "color:#f0c66a; background:#302817; border:1px solid #66552b;"
+          "border-radius:10px; padding:4px 9px;");
+      };
+    update_badge(depth_status_, depth_seen_.load(), "深度相机：在线", "深度相机：等待数据");
+    update_badge(lidar_status_, lidar_seen_.load(), "3D 雷达：在线", "3D 雷达：等待数据");
+    update_badge(octomap_status_, octomap_seen_.load(), "OctoMap：已更新", "OctoMap：等待地图");
+  }
+
+  void refreshTaskControls()
+  {
+    const bool has_target = target_combo_ && target_combo_->currentIndex() >= 0 &&
+      static_cast<std::size_t>(target_combo_->currentIndex()) < detected_objects_.size();
+    if (detect_button_) {
+      detect_button_->setEnabled(!task_busy_);
+      target_combo_->setEnabled(!task_busy_);
+      start_task_button_->setEnabled(!task_busy_ && has_target);
+      cancel_task_button_->setEnabled(task_busy_ && static_cast<bool>(active_task_goal_));
+      place_x_spin_->setEnabled(!task_busy_);
+      place_y_spin_->setEnabled(!task_busy_);
+      place_z_spin_->setEnabled(!task_busy_);
+    }
   }
 
   void updateJointState(const QVector<double>& degrees)
@@ -545,11 +839,35 @@ private:
 
   rclcpp::Node::SharedPtr node_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_subscription_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr depth_cloud_subscription_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_cloud_subscription_;
+  rclcpp::Subscription<moveit_msgs::msg::PlanningScene>::SharedPtr planning_scene_subscription_;
+  rclcpp::Client<simple_arm_interfaces::srv::DetectObjects>::SharedPtr detection_client_;
+  rclcpp_action::Client<simple_arm_interfaces::action::PickPlace>::SharedPtr pick_place_client_;
+  rclcpp_action::ClientGoalHandle<simple_arm_interfaces::action::PickPlace>::SharedPtr
+    active_task_goal_;
+  std::atomic_bool depth_seen_{false};
+  std::atomic_bool lidar_seen_{false};
+  std::atomic_bool octomap_seen_{false};
   QThread worker_thread_;
   MoveItWorker* worker_{nullptr};
 
   QLabel* status_badge_{nullptr};
   std::array<QLabel*, 6> current_labels_{};
+  QLabel* depth_status_{nullptr};
+  QLabel* lidar_status_{nullptr};
+  QLabel* octomap_status_{nullptr};
+  QLabel* target_pose_label_{nullptr};
+  QComboBox* target_combo_{nullptr};
+  QPushButton* detect_button_{nullptr};
+  QPushButton* start_task_button_{nullptr};
+  QPushButton* cancel_task_button_{nullptr};
+  QProgressBar* task_progress_{nullptr};
+  QDoubleSpinBox* place_x_spin_{nullptr};
+  QDoubleSpinBox* place_y_spin_{nullptr};
+  QDoubleSpinBox* place_z_spin_{nullptr};
+  std::vector<simple_arm_interfaces::msg::DetectedObject> detected_objects_;
+  bool task_busy_{false};
   std::array<QDoubleSpinBox*, 6> target_spins_{};
   std::array<QSlider*, 6> target_sliders_{};
   QSpinBox* velocity_spin_{nullptr};

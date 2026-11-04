@@ -12,8 +12,14 @@ find_package(geometry_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(shape_msgs REQUIRED)
+find_package(simple_arm_interfaces REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(vision_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tl_expected REQUIRED)
@@ -50,10 +56,40 @@ ament_target_dependencies(
   tf2_ros
 )
 
+add_executable(object_recognition_server src/object_recognition_server.cpp)
+target_compile_features(object_recognition_server PUBLIC cxx_std_17)
+ament_target_dependencies(
+  object_recognition_server
+  rclcpp
+  sensor_msgs
+  simple_arm_interfaces
+  tf2
+  tf2_geometry_msgs
+  tf2_ros
+  vision_msgs
+  visualization_msgs
+)
+
+add_executable(pick_place_server src/pick_place_server.cpp)
+target_compile_features(pick_place_server PUBLIC cxx_std_17)
+ament_target_dependencies(
+  pick_place_server
+  geometry_msgs
+  moveit_ros_planning_interface
+  moveit_msgs
+  rclcpp
+  rclcpp_action
+  shape_msgs
+  simple_arm_interfaces
+  std_msgs
+)
+
 install(TARGETS
   simple_arm_gripper_plugin
   pick_place_demo
   arm_state_feedback
+  object_recognition_server
+  pick_place_server
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}

@@ -4,6 +4,7 @@
   <xacro:arg name="use_gazebo" default="false"/>
   <xacro:arg name="controllers_file" default=""/>
   <xacro:arg name="enable_gripper_plugin" default="false"/>
+  <xacro:arg name="enable_sensors" default="true"/>
 
   <material name="arm_blue"><color rgba="0.025 0.30 0.66 1.0"/></material>
   <material name="joint_dark"><color rgba="0.035 0.050 0.075 1.0"/></material>
@@ -135,6 +136,61 @@
     <parent link="link_6"/><child link="tool0"/><origin xyz="0.10 0 0"/>
   </joint>
 
+  <!-- Gazebo perception station. Fixed joints are published on /tf_static, while
+       the articulated arm chain remains dynamic on /tf. -->
+  <xacro:if value="$(arg enable_sensors)">
+    <link name="sensor_mast_link">
+      <visual>
+        <origin xyz="0 0 0.55"/>
+        <geometry><cylinder radius="0.025" length="1.10"/></geometry>
+        <material name="joint_dark"/>
+      </visual>
+      <visual>
+        <origin xyz="0 0 0.03"/>
+        <geometry><cylinder radius="0.12" length="0.06"/></geometry>
+        <material name="rubber_black"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.55"/>
+        <geometry><cylinder radius="0.03" length="1.10"/></geometry>
+      </collision>
+      <xacro:box_inertial mass="2.0" x="0.06" y="0.06" z="1.10"/>
+    </link>
+    <joint name="world_to_sensor_mast" type="fixed">
+      <parent link="world"/>
+      <child link="sensor_mast_link"/>
+      <origin xyz="0.05 -0.62 0"/>
+    </joint>
+
+    <link name="depth_camera_link">
+      <visual><geometry><box size="0.11 0.05 0.05"/></geometry><material name="arm_blue"/></visual>
+      <collision><geometry><box size="0.11 0.05 0.05"/></geometry></collision>
+      <xacro:box_inertial mass="0.18" x="0.11" y="0.05" z="0.05"/>
+    </link>
+    <joint name="sensor_mast_to_depth_camera" type="fixed">
+      <parent link="sensor_mast_link"/>
+      <child link="depth_camera_link"/>
+      <origin xyz="0 0 1.12" rpy="0 0.62 1.05"/>
+    </joint>
+    <link name="depth_camera_optical_frame"/>
+    <joint name="depth_camera_optical_joint" type="fixed">
+      <parent link="depth_camera_link"/>
+      <child link="depth_camera_optical_frame"/>
+      <origin xyz="0 0 0" rpy="-1.570796 0 -1.570796"/>
+    </joint>
+
+    <link name="lidar_link">
+      <visual><geometry><cylinder radius="0.055" length="0.065"/></geometry><material name="accent_cyan"/></visual>
+      <collision><geometry><cylinder radius="0.055" length="0.065"/></geometry></collision>
+      <xacro:box_inertial mass="0.25" x="0.11" y="0.11" z="0.065"/>
+    </link>
+    <joint name="sensor_mast_to_lidar" type="fixed">
+      <parent link="sensor_mast_link"/>
+      <child link="lidar_link"/>
+      <origin xyz="0 0 0.78"/>
+    </joint>
+  </xacro:if>
+
   <ros2_control name="SimpleArmSystem" type="system">
     <hardware>
       <xacro:if value="$(arg use_gazebo)">
@@ -180,6 +236,61 @@
           <object_link>link</object_link>
           <command_topic>/simple_arm/gripper_command</command_topic>
         </plugin>
+      </gazebo>
+    </xacro:if>
+    <xacro:if value="$(arg enable_sensors)">
+      <gazebo reference="sensor_mast_link"><material>Gazebo/DarkGrey</material></gazebo>
+      <gazebo reference="depth_camera_link">
+        <material>Gazebo/Blue</material>
+        <sensor name="depth_camera" type="depth">
+          <always_on>true</always_on>
+          <update_rate>15</update_rate>
+          <visualize>true</visualize>
+          <camera>
+            <horizontal_fov>1.0472</horizontal_fov>
+            <image><width>320</width><height>240</height><format>R8G8B8</format></image>
+            <depth_camera/>
+            <clip><near>0.15</near><far>3.0</far></clip>
+            <noise><type>gaussian</type><mean>0.0</mean><stddev>0.002</stddev></noise>
+          </camera>
+          <plugin name="depth_camera_ros" filename="libgazebo_ros_camera.so">
+            <ros><namespace>/simple_arm/sensors</namespace></ros>
+            <camera_name>depth_camera</camera_name>
+            <frame_name>depth_camera_optical_frame</frame_name>
+            <min_depth>0.15</min_depth>
+            <max_depth>3.0</max_depth>
+          </plugin>
+        </sensor>
+      </gazebo>
+      <gazebo reference="lidar_link">
+        <material>Gazebo/Turquoise</material>
+        <sensor name="lidar_3d" type="ray">
+          <always_on>true</always_on>
+          <update_rate>8</update_rate>
+          <visualize>false</visualize>
+          <ray>
+            <scan>
+              <horizontal>
+                <samples>360</samples><resolution>1</resolution>
+                <min_angle>-3.14159</min_angle><max_angle>3.14159</max_angle>
+              </horizontal>
+              <vertical>
+                <samples>24</samples><resolution>1</resolution>
+                <min_angle>-0.43633</min_angle><max_angle>0.43633</max_angle>
+              </vertical>
+            </scan>
+            <range><min>0.12</min><max>4.0</max><resolution>0.01</resolution></range>
+            <noise><type>gaussian</type><mean>0.0</mean><stddev>0.005</stddev></noise>
+          </ray>
+          <plugin name="lidar_3d_ros" filename="libgazebo_ros_ray_sensor.so">
+            <ros>
+              <namespace>/simple_arm/sensors</namespace>
+              <remapping>~/out:=lidar/points</remapping>
+            </ros>
+            <output_type>sensor_msgs/PointCloud2</output_type>
+            <frame_name>lidar_link</frame_name>
+          </plugin>
+        </sensor>
       </gazebo>
     </xacro:if>
   </xacro:if>

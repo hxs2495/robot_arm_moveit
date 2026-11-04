@@ -1,0 +1,5 @@
+bool refresh
+---
+bool success
+string message
+simple_arm_interfaces/DetectedObject[] objects
