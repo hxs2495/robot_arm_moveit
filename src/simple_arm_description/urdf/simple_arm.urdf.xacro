@@ -1,6 +1,9 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="simple_arm">
   <xacro:arg name="use_mock_hardware" default="true"/>
+  <xacro:arg name="use_gazebo" default="false"/>
+  <xacro:arg name="controllers_file" default=""/>
+  <xacro:arg name="enable_gripper_plugin" default="false"/>
 
   <material name="arm_blue"><color rgba="0.025 0.30 0.66 1.0"/></material>
   <material name="joint_dark"><color rgba="0.035 0.050 0.075 1.0"/></material>
@@ -8,6 +11,13 @@
   <material name="machined_metal"><color rgba="0.48 0.55 0.62 1.0"/></material>
   <material name="rubber_black"><color rgba="0.015 0.020 0.028 1.0"/></material>
   <material name="tool_orange"><color rgba="1.00 0.32 0.035 1.0"/></material>
+
+  <!-- A fixed world joint keeps the robot base anchored in Gazebo. -->
+  <link name="world"/>
+  <joint name="world_to_base" type="fixed">
+    <parent link="world"/>
+    <child link="base_link"/>
+  </joint>
 
   <xacro:macro name="box_inertial" params="mass x y z">
     <inertial>
@@ -25,6 +35,7 @@
     <visual><origin xyz="0 0 0.112"/><geometry><cylinder radius="0.119" length="0.014"/></geometry><material name="accent_cyan"/></visual>
     <visual><origin xyz="0 0 0.127"/><geometry><cylinder radius="0.097" length="0.020"/></geometry><material name="joint_dark"/></visual>
     <collision><origin xyz="0 0 0.06"/><geometry><cylinder radius="0.11" length="0.12"/></geometry></collision>
+    <xacro:box_inertial mass="5.0" x="0.22" y="0.22" z="0.12"/>
   </link>
 
   <link name="link_1">
@@ -126,8 +137,13 @@
 
   <ros2_control name="SimpleArmSystem" type="system">
     <hardware>
-      <plugin>mock_components/GenericSystem</plugin>
-      <param name="calculate_dynamics">false</param>
+      <xacro:if value="$(arg use_gazebo)">
+        <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+      </xacro:if>
+      <xacro:unless value="$(arg use_gazebo)">
+        <plugin>mock_components/GenericSystem</plugin>
+        <param name="calculate_dynamics">false</param>
+      </xacro:unless>
     </hardware>
     <xacro:macro name="mock_joint" params="joint_name initial_position">
       <joint name="${joint_name}">
@@ -143,4 +159,28 @@
     <xacro:mock_joint joint_name="joint_5" initial_position="-0.50"/>
     <xacro:mock_joint joint_name="joint_6" initial_position="0.0"/>
   </ros2_control>
+
+  <xacro:if value="$(arg use_gazebo)">
+    <gazebo reference="joint_1"><dynamics damping="0.25" friction="0.05"/></gazebo>
+    <gazebo reference="joint_2"><dynamics damping="0.30" friction="0.06"/></gazebo>
+    <gazebo reference="joint_3"><dynamics damping="0.25" friction="0.05"/></gazebo>
+    <gazebo reference="joint_4"><dynamics damping="0.15" friction="0.03"/></gazebo>
+    <gazebo reference="joint_5"><dynamics damping="0.12" friction="0.03"/></gazebo>
+    <gazebo reference="joint_6"><dynamics damping="0.10" friction="0.02"/></gazebo>
+    <gazebo>
+      <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
+        <parameters>$(arg controllers_file)</parameters>
+      </plugin>
+    </gazebo>
+    <xacro:if value="$(arg enable_gripper_plugin)">
+      <gazebo>
+        <plugin filename="libsimple_arm_gripper_plugin.so" name="simple_arm_gripper">
+          <robot_link>link_6</robot_link>
+          <object_model>pick_cube</object_model>
+          <object_link>link</object_link>
+          <command_topic>/simple_arm/gripper_command</command_topic>
+        </plugin>
+      </gazebo>
+    </xacro:if>
+  </xacro:if>
 </robot>

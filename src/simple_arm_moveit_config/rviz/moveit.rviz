@@ -5,13 +5,11 @@ Panels:
     Property Tree Widget:
       Expanded: ~
       Splitter Ratio: 0.5
-    Tree Height: 273
-  - Class: moveit_rviz_plugin/MotionPlanning
-    Name: MotionPlanning
+    Tree Height: 70
 Visualization Manager:
   Class: ""
   Displays:
-    - Alpha: 0.32
+    - Alpha: 0.3199999928474426
       Cell Size: 0.10000000149011612
       Class: rviz_default_plugins/Grid
       Color: 72; 104; 132
@@ -87,6 +85,10 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
+        world:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
       Mass Properties:
         Inertia: false
         Mass: false
@@ -166,8 +168,12 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
+          world:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
         Loop Animation: false
-        Robot Alpha: 0.38
+        Robot Alpha: 0.3799999952316284
         Robot Color: 0; 188; 212
         Show Robot Collision: false
         Show Robot Visual: true
@@ -252,6 +258,10 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
+          world:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
         Robot Alpha: 1
         Show Robot Collision: false
         Show Robot Visual: true
@@ -271,37 +281,37 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.55
+      Distance: 1.5499999523162842
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.34
+        X: 0.3400000035762787
         Y: 0
-        Z: 0.34
+        Z: 0.3400000035762787
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.48
+      Pitch: 0.47999998927116394
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
-      Yaw: 0.82
+      Yaw: 0.8199999928474426
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 920
+  Height: 794
   Hide Left Dock: false
   Hide Right Dock: false
   MotionPlanning:
     collapsed: false
   MotionPlanning - Trajectory Slider:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000002b4000004c6fc0200000004fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000004100fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e0067010000003d000002520000017d00fffffffb000000100044006900730070006c006100790073010000029500000194000000c900fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e0067010000042f000000d40000006e00ffffff00000746000004c600000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
-  Width: 1480
-  X: 80
-  Y: 50
+  QMainWindow State: 000000ff00000000fd0000000100000000000002b4000002c0fc0200000004fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000004100fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e0067010000003d0000017d0000017d00fffffffb000000100044006900730070006c00610079007301000001c0000000c9000000c900fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e0067010000028f0000006e0000006e00ffffff000002e6000002c000000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Width: 1440
+  X: 2468
+  Y: 232
