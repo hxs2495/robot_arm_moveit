@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>simple_arm_description</name>
+  <version>0.1.0</version>
+  <description>A lightweight six-axis robot arm description for ROS 2 and MoveIt 2 demos.</description>
+  <maintainer email="maintainer@example.com">Robot Arm Maintainer</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>hardware_interface</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>ros2_control</exec_depend>
+  <exec_depend>xacro</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
