@@ -4,6 +4,8 @@
 `ros2_control` mock hardware 完成规划与轨迹执行。后续接入 Gazebo 或真实机械臂时，
 可保留 MoveIt 配置，只替换 URDF 尺寸、网格和 `ros2_control` hardware plugin。
 
+![截图 2026-11-04 14-47-40](README.assets/%E6%88%AA%E5%9B%BE%202026-11-04%2014-47-40.png)
+
 ## 功能包
 
 - `simple_arm_description`：六轴机械臂 Xacro、碰撞体和 ros2_control 接口。
