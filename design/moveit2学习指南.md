@@ -34,6 +34,19 @@
 | 夹爪与抓取 | 1～2 天 | 能控制平行夹爪并完成 attach/detach |
 | 实机联动 | 视驱动而定 | 编码器反馈、轨迹执行和急停链路全部通过验收 |
 
+实际操作时始终按下面的顺序推进，不要跳过中间验收点：
+
+1. 固定 ROS、MoveIt、Xacro 和 ros2_control 版本；
+2. 创建 URDF，并把关节限位明确写成浮点数；
+3. 用 `check_urdf` 验证模型；
+4. 在 Setup Assistant 中按页面顺序配置 SRDF；
+5. 生成配置包，但把生成结果视为“初稿”；
+6. 检查 YAML 数值类型、控制器 Action 和 SRDF 交叉关系；
+7. 构建并启动 Mock Hardware Demo；
+8. 分别测试机械臂和夹爪控制器；
+9. 再编写规划、抓取和 PlanningScene 程序；
+10. 最后才替换成实机 HardwareInterface。
+
 ---
 
 ## 1. 先建立整体认识
@@ -152,7 +165,44 @@ source ~/open_source_project/robot_arm_moveit/install/setup.bash
 
 “构建了但没 source”是 ROS 2 最常见的问题之一。
 
-### 2.2 本教程使用的两个包
+### 2.2 安装后先记录版本基线
+
+MoveIt 2 不是单一软件包，它会同时使用 MoveIt、Xacro、ros2_control、
+ros2_controllers 和 RViz。即使都属于 Humble，不同补丁版本或 backport 的发布时间也
+可能不同，因此 Setup Assistant 的生成模板与运行时警告不一定完全同步。
+
+安装后先记录版本：
+
+```bash
+dpkg-query -W \
+  ros-humble-moveit \
+  ros-humble-moveit-setup-assistant \
+  ros-humble-xacro \
+  ros-humble-ros2-control \
+  ros-humble-ros2-controllers
+```
+
+本教程在以下主版本组合上完成过实际验证：
+
+| 组件 | 验证版本 |
+|---|---|
+| ROS 2 | Humble / Ubuntu 22.04 |
+| MoveIt 2 | 2.5.10 |
+| ros2_control | 2.53.x |
+| ros2_controllers | 2.52.x |
+
+版本使用原则：
+
+- 不要在同一个终端混用 Humble 的 apt 包和 Rolling/main 分支源码；
+- source 顺序固定为 `/opt/ros/humble/setup.bash`，再 source 当前工作区；
+- 升级 apt 包后重新构建工作区，并重新执行本教程第 4.13 节验收；
+- 出现弃用警告时先看运行是否正常，再检查生成模板是否使用旧 API；
+- 报错时把上面的版本输出和最早异常一起保存，不要只截 RViz 最后一条错误。
+
+> Setup Assistant 是与当前安装版本配套的配置生成器，但它不会替你完成运行时集成测试。
+> 生成文件仍需要人工检查，尤其是严格类型 YAML 和插件专用字段。
+
+### 2.3 本教程使用的两个包
 
 ```text
 src/
@@ -250,7 +300,7 @@ ros2 pkg prefix robot_arm_moveit_config
   <origin xyz="0 0 0.15"/>
   <axis xyz="0 1 0"/>
   <limit lower="-2.2" upper="2.2"
-         effort="80" velocity="2.0"/>
+         effort="80.0" velocity="2.0"/>
   <dynamics damping="0.2" friction="0.05"/>
 </joint>
 ```
@@ -263,6 +313,32 @@ ros2 pkg prefix robot_arm_moveit_config
 4. `velocity` 是不是用 rad/s；
 5. revolute、continuous、prismatic 类型是否正确。
 
+#### 关节限位统一使用显式浮点写法
+
+URDF 是 XML，属性值首先是字符串；URDF 解析器会根据字段把 `2` 和 `2.0` 都转换为
+浮点数。但是 Setup Assistant 还会把这些值重新写入 YAML，而 ROS 2 参数会严格区分
+YAML 的 integer 和 double。因此，所有可能进入运行参数的关节限位建议统一写成：
+
+```xml
+<limit lower="-2.2" upper="2.2"
+       effort="80.0" velocity="2.0"/>
+```
+
+不要写成：
+
+```xml
+<limit lower="-2.2" upper="2.2"
+       effort="80" velocity="2"/>
+```
+
+本工程已经把 6 个机械臂关节和 2 个手指关节的 `lower`、`effort`、`velocity`
+等整数字面量规范为带小数点的写法。需要注意：
+
+- 这能表达清楚浮点意图，但不能保证所有 YAML 生成器都保留末尾 `.0`；
+- URDF 标准没有 MoveIt 的 `max_acceleration` 字段；
+- Setup Assistant 生成的 `max_acceleration: 0` 仍必须在生成后改为 `0.0`；
+- 因此第 4.13 节的全量 YAML 类型检查仍然不能省略。
+
 ### 3.4 平行夹爪与 mimic joint
 
 当前模型用一个主动指关节带动另一个从动指关节：
@@ -273,7 +349,7 @@ ros2 pkg prefix robot_arm_moveit_config
   <child link="left_finger"/>
   <origin xyz="0 0.052 0.045"/>
   <axis xyz="0 1 0"/>
-  <limit lower="0" upper="0.025" effort="15" velocity="0.05"/>
+  <limit lower="0.0" upper="0.025" effort="15.0" velocity="0.05"/>
 </joint>
 
 <joint name="right_finger_joint" type="prismatic">
@@ -281,8 +357,8 @@ ros2 pkg prefix robot_arm_moveit_config
   <child link="right_finger"/>
   <origin xyz="0 -0.052 0.045"/>
   <axis xyz="0 -1 0"/>
-  <limit lower="0" upper="0.025" effort="15" velocity="0.05"/>
-  <mimic joint="left_finger_joint" multiplier="1" offset="0"/>
+  <limit lower="0.0" upper="0.025" effort="15.0" velocity="0.05"/>
+  <mimic joint="left_finger_joint" multiplier="1.0" offset="0.0"/>
 </joint>
 ```
 
@@ -347,6 +423,10 @@ xmllint --noout \
 check_urdf \
   src/robot_arm_description/urdf/generic_6dof_arm_with_gripper.urdf
 
+# 人工确认所有 limit/mimic 数值使用明确的小数写法
+rg '<limit|<mimic' \
+  src/robot_arm_description/urdf/generic_6dof_arm_with_gripper.urdf
+
 colcon build \
   --packages-select robot_arm_description \
   --symlink-install
@@ -368,6 +448,7 @@ URDF 验收清单：
 - [ ] 只有一个根 link；
 - [ ] 所有关节 parent/child 存在；
 - [ ] 非 fixed joint 都有限位；
+- [ ] 关节 limit 和 mimic 的数值使用 `2.0`、`0.0`、`1.0` 这类显式浮点写法；
 - [ ] 初始姿态没有明显自碰撞；
 - [ ] visual 与 collision 大致重合；
 - [ ] 关节正方向与实机一致；
@@ -405,12 +486,29 @@ src/robot_arm_description/urdf/generic_6dof_arm_with_gripper.urdf
 
 ![Setup Assistant 已加载当前机械臂](assets/setup_assistant_overview.png)
 
+![image-20261106140045429](assets/image-20261106140045429.png)
+
 如果选择文件后界面卡住，先用 `check_urdf` 验证模型；如果 URDF 使用了
 `package://...` 资源，还要确认相关 ament 包已经构建并 source。
 
 ### 4.2 推荐配置顺序
 
 ![Setup Assistant 推荐流程](assets/setup_assistant_workflow.svg)
+
+按左侧页面从上到下操作，每完成一页就做一次小检查：
+
+| 顺序 | 页面 | 本项目操作 | 离开页面前确认 |
+|---:|---|---|---|
+| 1 | Self-Collisions | 生成自碰撞矩阵 | 没有随意禁用可能发生的碰撞 |
+| 2 | Virtual Joints | `world` 到 `base_link`，类型 fixed | child link 是机器人根链接 |
+| 3 | Planning Groups | 创建 `arm` Chain | `base_link → tool0` 完整存在 |
+| 4 | Planning Groups | 创建 `gripper` | 主动关节是 `left_finger_joint` |
+| 5 | Robot Poses | 创建 `home/ready/open/closed` | 姿态值在 URDF 限位内 |
+| 6 | End Effectors | 创建 `gripper_eef` | `tool0` 确实属于 `arm` |
+| 7 | Passive Joints | 本模型通常留空 | mimic 关节不要重复当作被动关节 |
+| 8 | ros2_control URDF | 选择 position 命令接口 | 右指不创建独立 command interface |
+| 9 | ROS 2 Controllers | 创建 arm 与 gripper 控制器 | 控制器关节集合没有重叠冲突 |
+| 10 | Configuration Files | 生成配置包 | 继续执行 4.13 节，而不是直接运行 Demo |
 
 ### 4.3 Self-Collisions
 
@@ -423,6 +521,8 @@ src/robot_arm_description/urdf/generic_6dof_arm_with_gripper.urdf
 - 修改 link、collision geometry、关节限位后重新生成。
 
 不要为了“让规划通过”而随便禁用真实可能发生的碰撞。
+
+![image-20261106140120904](assets/image-20261106140120904.png)
 
 ### 4.4 Virtual Joints
 
@@ -437,6 +537,10 @@ src/robot_arm_description/urdf/generic_6dof_arm_with_gripper.urdf
 
 如果机械臂安装在移动底盘上，应根据系统设计选择 planar 或 floating，并由定位系统持续发布对应 TF。
 
+![image-20261106140301028](assets/image-20261106140301028.png)
+
+![image-20261106140311317](assets/image-20261106140311317.png)
+
 ### 4.5 配置机械臂 Planning Group
 
 推荐配置：
@@ -449,7 +553,32 @@ src/robot_arm_description/urdf/generic_6dof_arm_with_gripper.urdf
 | Base Link | `base_link` |
 | Tip Link | `tool0` |
 
-也可以通过 **Add Joints** 选择 `joint_1` 到 `joint_6`。对于标准串联机械臂，Chain 更直观，也更容易满足 KDL 的串联链要求。
+具体操作：
+
+1. 点击 **Add Group**；
+2. Group Name 填 `arm`；
+3. Kinematic Solver 选择 KDL；
+4. 点击 **Add Kin. Chain**；
+5. Base Link 选择 `base_link`；
+6. Tip Link 选择 `tool0`；
+7. 保存 Group。
+
+对于标准串联机械臂，优先使用 Chain。它不仅更容易满足 KDL 的串联链要求，也会把
+固定法兰链接 `tool0` 纳入组的语义范围。
+
+如果使用 **Add Joints** 只选择 `joint_1` 到 `joint_6`，活动自由度虽然正确，但
+`tool0` 可能不属于 `arm`。这时再把 End Effector 的 Parent Link 设为 `tool0`，就会
+产生“XML 合法、MoveIt 语义不完整”的 SRDF。
+
+离开本页前必须确认：
+
+```text
+arm 的活动关节：joint_1 ... joint_6
+arm 的末端链接：tool0
+```
+
+如果坚持使用 Add Joints，需要同时用 **Add Links** 把 `tool0` 加入 `arm`；
+更简单的做法仍然是重新建立 `base_link → tool0` Chain。
 
 注意：
 
@@ -457,6 +586,10 @@ src/robot_arm_description/urdf/generic_6dof_arm_with_gripper.urdf
 - fixed joint 不产生可控自由度；
 - KDL 只负责运动学，不负责路径搜索；
 - IK 超时时间过小会导致交互标记经常变红。
+
+![image-20261106140411365](assets/image-20261106140411365.png)
+
+![image-20261106140441518](assets/image-20261106140441518.png)
 
 ### 4.6 配置夹爪 Planning Group
 
@@ -473,7 +606,13 @@ src/robot_arm_description/urdf/generic_6dof_arm_with_gripper.urdf
 
 也可以使用 Add Joints 选择两个手指关节，但要记住 `right_finger_joint` 是 mimic joint，真正的命令变量只有 `left_finger_joint`。
 
-> 当前仓库生成的 SRDF 只有 `arm` 组。要完成夹爪教学配置，请打开 **Edit Existing MoveIt Configuration Package**，添加 `gripper` 组、命名姿态和 End Effector，然后重新生成或保存。
+当前仓库的 SRDF 已经包含 `arm`、`gripper`、`open`、`closed` 和
+`gripper_eef`。其中真正接受控制命令的是 `left_finger_joint`，
+`right_finger_joint` 继续由 URDF 的 mimic 关系驱动。
+
+![image-20261106140709071](assets/image-20261106140709071.png)
+
+![image-20261106140625137](assets/image-20261106140625137.png)
 
 ### 4.7 Robot Poses
 
@@ -492,6 +631,10 @@ src/robot_arm_description/urdf/generic_6dof_arm_with_gripper.urdf
 - `left_finger_joint = 0.025`：打开；
 - 右指位置由 mimic 关系计算。
 
+![image-20261106140742773](assets/image-20261106140742773.png)
+
+![image-20261106140947058](assets/image-20261106140947058.png)
+
 ### 4.8 End Effectors
 
 推荐：
@@ -504,6 +647,23 @@ src/robot_arm_description/urdf/generic_6dof_arm_with_gripper.urdf
 | Parent Group | `arm` |
 
 `tool0` 是机械臂法兰，`gripper` 是安装在法兰上的完整末端组。`gripper_tcp` 是抓取任务的参考点，不等同于 End Effector Group。
+
+这是一个跨页面语义关系，Setup Assistant 不一定阻止你保存错误组合。点击保存前回到
+Planning Groups 检查一次：
+
+- `arm` 是否包含 Parent Link `tool0`；
+- `gripper` 是否与 `arm` 分开，不要把手指关节放进机械臂控制器；
+- `gripper_eef` 的 Parent Group 是否为 `arm`；
+- `gripper_tcp` 只是任务坐标，不要误选成 End Effector Group。
+
+如果后续日志出现下面内容，说明本页和 Planning Groups 页的组合不一致：
+
+```text
+Group 'arm' was specified as parent group for end-effector 'gripper_eef'
+but it does not include the parent link 'tool0'
+```
+
+![image-20261106141029128](assets/image-20261106141029128.png)
 
 ### 4.9 Passive Joints
 
@@ -526,7 +686,42 @@ Setup Assistant 可以生成：
 - `joint_state_broadcaster`；
 - `arm_controller`，类型为 `JointTrajectoryController`。
 
-夹爪需要单独的 `GripperActionController`，第 5 章给出完整配置。
+夹爪需要独立控制器。可以使用 `GripperActionController`，也可以像当前工程一样，
+使用只包含 `left_finger_joint` 的 `JointTrajectoryController`。两种方案的 Action
+类型不同，`ros2_controllers.yaml` 与 `moveit_controllers.yaml` 必须成对匹配。
+
+当前工程在 Setup Assistant 中按以下方式操作：
+
+1. **ros2_control URDF Modification** 页面选择 position command interface；
+2. state interface 选择 position 和 velocity；
+3. 六个机械臂关节都有 command/state interface；
+4. 夹爪只给 `left_finger_joint` 添加 command/state interface；
+5. 不给 mimic 的 `right_finger_joint` 添加独立 command interface；
+6. **ROS 2 Controllers** 页面添加 `arm_controller`，类型选
+   `JointTrajectoryController`，关节选择 `joint_1` 到 `joint_6`；
+7. 添加 `gripper_controller`，类型同样选 `JointTrajectoryController`，只选择
+   `left_finger_joint`。
+
+#### GUI 能配置的内容与必须手工检查的内容
+
+Setup Assistant 页面主要负责控制器名称、类型和关节集合。MoveIt Controller Manager
+插件运行时需要的字段不一定都在 GUI 中暴露，因此生成后必须打开
+`moveit_controllers.yaml` 检查：
+
+| ros2_control 控制器 | MoveIt 类型 | 必需 `action_ns` | 当前关节集合 |
+|---|---|---|---|
+| `arm_controller` / `JointTrajectoryController` | `FollowJointTrajectory` | `follow_joint_trajectory` | `joint_1`～`joint_6` |
+| `gripper_controller` / `JointTrajectoryController` | `FollowJointTrajectory` | `follow_joint_trajectory` | `left_finger_joint` |
+| 可选 `GripperActionController` | `GripperCommand` | `gripper_cmd` | 主动夹爪关节 |
+
+每个 MoveIt 控制器条目还建议明确写出 `default: true`。这些是插件专用字段，
+不是 URDF 或 SRDF 的一部分；GUI 没有输入框时，不是让你跳过，而是要在生成后手工补齐。
+
+![image-20261106141126381](assets/image-20261106141126381.png)
+
+![image-20261106141155088](assets/image-20261106141155088.png)
+
+![image-20261106141203303](assets/image-20261106141203303.png)
 
 ### 4.11 生成包
 
@@ -535,6 +730,15 @@ Setup Assistant 可以生成：
 ```text
 ~/open_source_project/robot_arm_moveit/src/robot_arm_moveit_config
 ```
+
+首次生成可以直接使用该路径。编辑现有配置包并再次生成时，先保存当前差异：
+
+```bash
+git diff -- src/robot_arm_moveit_config
+```
+
+Setup Assistant 会重新写入多个 YAML、Xacro、SRDF 和 RViz 文件，可能覆盖之前的人工修复。
+生成后立即再次运行 `git diff`，逐个确认变化，不要把“工具生成成功”理解为“配置已经验收”。
 
 生成后重新构建：
 
@@ -546,6 +750,16 @@ colcon build \
   --symlink-install
 source install/setup.bash
 ```
+
+![image-20261106141248798](assets/image-20261106141248798.png)
+
+**![image-20261106141256686](assets/image-20261106141256686.png)**
+
+![image-20261106141307748](assets/image-20261106141307748.png)
+
+![image-20261106141402659](assets/image-20261106141402659.png)
+
+![image-20261106141418742](assets/image-20261106141418742.png)
 
 ### 4.12 生成文件速查
 
@@ -562,11 +776,14 @@ source install/setup.bash
 | `moveit.rviz` | MotionPlanning 面板布局 |
 | `demo.launch.py` | RViz + MoveGroup + Mock Hardware 一键启动 |
 
-### 4.13 生成后必须人工检查
+### 4.13 生成后必须人工检查（前面检查点的最终汇总）
 
-Setup Assistant 生成成功，不代表运行时一定正确。当前工程已经实际遇到过以下两个问题。
+Setup Assistant 生成成功，不代表运行时一定正确。尤其是再次点击生成后，工具可能会
+覆盖之前人工修复过的 YAML、Xacro 和 SRDF。每次重新生成都应重新检查以下项目。
 
 #### 检查 1：YAML 数字类型
+
+src/robot_arm_moveit_config/config/joint_limits.yaml
 
 错误写法：
 
@@ -588,6 +805,28 @@ max_velocity: 2.0
 max_acceleration: 0.0
 ```
 
+不要只修改日志点名的第一个关节。参数加载按顺序进行，修完 `joint_2` 后，下一次可能才会
+报 `joint_3` 或夹爪关节。必须检查 `joint_limits` 下的**全部关节**。
+
+可以用下面的脚本一次检查所有速度和加速度值：
+
+```bash
+python3 - <<'PY'
+import pathlib
+import yaml
+
+path = pathlib.Path(
+    "src/robot_arm_moveit_config/config/joint_limits.yaml")
+limits = yaml.safe_load(path.read_text())["joint_limits"]
+for joint, values in limits.items():
+    for key in ("max_velocity", "max_acceleration"):
+        value = values.get(key)
+        assert isinstance(value, float), (
+            f"{joint}.{key} 不是 double：{value!r}")
+print("所有 joint limit 数值均为 double")
+PY
+```
+
 #### 检查 2：控制器 Action 命名空间
 
 `moveit_controllers.yaml` 应包含：
@@ -596,6 +835,7 @@ max_acceleration: 0.0
 moveit_simple_controller_manager:
   controller_names:
     - arm_controller
+    - gripper_controller
 
   arm_controller:
     type: FollowJointTrajectory
@@ -608,9 +848,74 @@ moveit_simple_controller_manager:
       - joint_4
       - joint_5
       - joint_6
+
+  gripper_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: true
+    joints:
+      - left_finger_joint
 ```
 
-缺少 `action_ns` 时，MoveIt 会报告 0 个可用控制器，只能规划，不能执行。
+缺少 `action_ns` 时，MoveIt 不能连接对应 Action。机械臂和夹爪是两个独立条目，
+不能只修 `arm_controller` 而漏掉 `gripper_controller`。健康日志应包含：
+
+```text
+Added FollowJointTrajectory controller for arm_controller
+Added FollowJointTrajectory controller for gripper_controller
+Returned 2 controllers in list
+```
+
+#### 检查 3：Xacro API 是否被重新生成覆盖
+
+Humble 中应使用：
+
+```xml
+${xacro.load_yaml(initial_positions_file)}
+```
+
+如果重新生成后变回 `${load_yaml(...)}`，虽然通常仍可运行，但会持续出现弃用警告，
+应恢复为带 `xacro.` 前缀的写法。
+
+#### 检查 4：末端执行器父链接是否属于父规划组
+
+如果 SRDF 写了：
+
+```xml
+<end_effector name="gripper_eef"
+              parent_link="tool0"
+              group="gripper"
+              parent_group="arm"/>
+```
+
+那么 `arm` 组必须包含 `tool0`。如果机械臂组是用活动关节逐个添加的，需要额外加入：
+
+```xml
+<group name="arm">
+  <!-- joint_1 ... joint_6 -->
+  <link name="tool0"/>
+</group>
+```
+
+否则会出现 `parent group ... does not include the parent link 'tool0'`。更推荐在
+Setup Assistant 中把机械臂定义为从 `base_link` 到 `tool0` 的 Chain，可以自然包含法兰链接。
+
+#### 检查 5：重新生成后的完整验收
+
+```bash
+colcon build \
+  --packages-select robot_arm_description robot_arm_moveit_config \
+  --symlink-install
+source install/setup.bash
+
+ros2 launch robot_arm_moveit_config demo.launch.py
+
+# 另开终端检查
+ros2 control list_controllers
+ros2 action list -t | grep follow_joint_trajectory
+```
+
+当前工程正常时应有 3 个 active 控制器，并出现机械臂和夹爪两条轨迹 Action。
 
 ---
 
@@ -648,7 +953,7 @@ Mock Hardware 示例：
 
 ### 5.3 为夹爪增加接口
 
-主关节有命令和状态，从动 mimic joint 只有状态：
+当前工程只把主动关节导出给 ros2_control：
 
 ```xml
 <joint name="left_finger_joint">
@@ -656,51 +961,48 @@ Mock Hardware 示例：
   <state_interface name="position"/>
   <state_interface name="velocity"/>
 </joint>
-
-<joint name="right_finger_joint">
-  <state_interface name="position"/>
-  <state_interface name="velocity"/>
-</joint>
 ```
 
-mimic 关系仍然保留在原始 URDF 中，不要在 ros2_control 块里再给 `right_finger_joint` 配 position command interface。
+mimic 关系保留在原始 URDF 中，MoveIt 和 RobotState 会根据 `left_finger_joint`
+计算右指位置。如果实机确实有右指编码器，可以为 `right_finger_joint` 导出 state
+interface，但不要再给它 position command interface，否则两个命令源可能互相冲突。
 
-### 5.4 增加 GripperActionController
+### 5.4 当前方案：JointTrajectoryController
 
-在 `ros2_controllers.yaml` 中增加：
+Setup Assistant 为当前工程生成的是单关节轨迹控制器：
 
 ```yaml
 controller_manager:
   ros__parameters:
     update_rate: 100
 
-    arm_controller:
-      type: joint_trajectory_controller/JointTrajectoryController
-
     gripper_controller:
-      type: position_controllers/GripperActionController
-
-    joint_state_broadcaster:
-      type: joint_state_broadcaster/JointStateBroadcaster
+      type: joint_trajectory_controller/JointTrajectoryController
 
 gripper_controller:
   ros__parameters:
-    joint: left_finger_joint
-    action_monitor_rate: 20.0
-    goal_tolerance: 0.001
-    max_effort: 15.0
-    allow_stalling: true
-    stall_velocity_threshold: 0.001
-    stall_timeout: 1.0
+    joints:
+      - left_finger_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
 ```
 
-Humble 的控制器类型和参数见 [Gripper Action Controller](https://control.ros.org/humble/doc/ros2_controllers/gripper_controllers/doc/userdoc.html)。
+该方案使用 `FollowJointTrajectory` Action，优点是与机械臂轨迹控制器一致，
+也便于指定夹爪运动时间。只控制主动的 `left_finger_joint`，不要把 mimic 关节加入控制器。
 
 确保启动时也生成一个 gripper spawner：
 
 ```bash
 ros2 run controller_manager spawner gripper_controller
 ```
+
+`GripperActionController` 也是有效的替代方案，适合需要 `max_effort`、堵转检测和
+`GripperCommand` 语义的实机夹爪。切换方案时必须同时修改 ros2_control 和 MoveIt
+两侧配置，不能只修改其中一个文件。参数参考
+[Gripper Action Controller](https://control.ros.org/humble/doc/ros2_controllers/gripper_controllers/doc/userdoc.html)。
 
 ### 5.5 告诉 MoveIt 如何控制夹爪
 
@@ -725,17 +1027,21 @@ moveit_simple_controller_manager:
       - joint_6
 
   gripper_controller:
-    type: GripperCommand
-    action_ns: gripper_cmd
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
     default: true
     joints:
       - left_finger_joint
-      - right_finger_joint
-    command_joint: left_finger_joint
-    parallel: true
 ```
 
-MoveIt 的 `GripperCommand` 参数说明见 [Low Level Controllers](https://moveit.picknik.ai/humble/doc/examples/controller_configuration/controller_configuration_tutorial.html)。
+两侧必须满足以下对应关系：
+
+| ros2_control 控制器 | MoveIt `type` | `action_ns` |
+|---|---|---|
+| `JointTrajectoryController` | `FollowJointTrajectory` | `follow_joint_trajectory` |
+| `GripperActionController` | `GripperCommand` | `gripper_cmd` |
+
+MoveIt 参数说明见 [Low Level Controllers](https://moveit.picknik.ai/humble/doc/examples/controller_configuration/controller_configuration_tutorial.html)。
 
 ### 5.6 单独测试夹爪
 
@@ -744,10 +1050,13 @@ ros2 control list_controllers
 ros2 action list -t | grep gripper
 
 ros2 action send_goal \
-  /gripper_controller/gripper_cmd \
-  control_msgs/action/GripperCommand \
-  "{command: {position: 0.02, max_effort: 10.0}}"
+  /gripper_controller/follow_joint_trajectory \
+  control_msgs/action/FollowJointTrajectory \
+  "{trajectory: {joint_names: [left_finger_joint], points: [{positions: [0.02], time_from_start: {sec: 1}}]}}"
 ```
+
+成功时会返回 `Goal successfully reached!`，随后 `/joint_states` 中
+`left_finger_joint` 应接近 `0.02`。
 
 本模型中 0.0 接近闭合，0.025 接近全开。第一次接实机时不要直接使用模型最大值，应先在低速度、低力矩下标定安全范围。
 
@@ -768,7 +1077,8 @@ ros2 launch robot_arm_moveit_config demo.launch.py
 
 ```text
 Added FollowJointTrajectory controller for arm_controller
-Returned 1 controllers in list
+Added FollowJointTrajectory controller for gripper_controller
+Returned 2 controllers in list
 You can start planning now!
 Ready to take commands for planning group arm.
 ```
@@ -817,6 +1127,7 @@ Ready to take commands for planning group arm.
 | `/robot_state_publisher` | 根据 URDF 和 joint_states 发布 TF |
 | `/controller_manager` | 管理硬件和控制器 |
 | `/arm_controller/follow_joint_trajectory` | 六轴轨迹 Action |
+| `/gripper_controller/follow_joint_trajectory` | 夹爪轨迹 Action |
 | `/joint_state_broadcaster` | 发布 `/joint_states` |
 | `/monitored_planning_scene` | MoveIt 规划场景同步 |
 | `/tf`、`/tf_static` | 坐标变换 |
@@ -841,6 +1152,7 @@ ros2 run tf2_ros tf2_echo world tool0
 
 ```text
 arm_controller             active
+gripper_controller         active
 joint_state_broadcaster    active
 ```
 
@@ -1165,8 +1477,13 @@ read() → controller update() → write()
 | `PackageNotFoundError: robot_arm_description` | description 不是 ament 包，或未构建/source | 使用 `ament_cmake`、调用 `ament_package()`，重新构建并 source |
 | Setup Assistant 选路径后卡住 | XML/URDF 错误，或 `package://` 资源所属包不可见 | 先运行 `check_urdf`，再检查 description 包与 `ros2 pkg prefix` |
 | `expected [double] got [integer]` | YAML 中 `2`、`0` 被解析为 integer | 改成 `2.0`、`0.0` |
+| 修完一个关节后又报下一个关节类型错误 | 只修了日志首先加载到的字段 | 遍历检查所有关节的 `max_velocity` 和 `max_acceleration` |
 | `No action namespace specified` | `moveit_controllers.yaml` 缺 `action_ns` | 添加 `follow_joint_trajectory` 或 `gripper_cmd` |
 | `Returned 0 controllers in list` | MoveIt 控制器映射错误 | 检查 controller name、type、action_ns、joints |
+| `parent group ... does not include ... tool0` | End Effector 的父链接不属于 `arm` 组 | 使用 `base_link → tool0` Chain，或把 `tool0` link 加入 `arm` |
+| `Using load_yaml() directly is deprecated` | 重新生成后 Xacro 使用旧 API | 改为 `xacro.load_yaml()` |
+| 重新生成后旧错误复现 | Setup Assistant 覆盖了人工修复 | 每次生成后重新执行 4.13 节验收清单 |
+| 选择 `gripper` 时提示 `No active joints or end effectors found` | 一维夹爪没有 IK/六维交互标记 | 若命名姿态、Action 和控制器正常，可忽略该 RViz 交互提示 |
 | `robot_description_semantic` 超时 | `move_group` 先崩溃或 SRDF 没传给 RViz | 先找 move_group 最早的异常，不要只修 RViz |
 | `No 3D sensor plugin` | 没配置 OctoMap 传感器 | 无感知需求可忽略；有需求配置 `sensors_3d.yaml` |
 | `root link has an inertia` | KDL 不支持根 link 惯量 | 可增加无惯量 dummy root；不做动力学时通常不致命 |
@@ -1207,7 +1524,7 @@ echo $AMENT_PREFIX_PATH | tr ':' '\n' | head
 # 模型
 check_urdf src/robot_arm_description/urdf/generic_6dof_arm_with_gripper.urdf
 xacro src/robot_arm_moveit_config/config/generic_6dof_arm_with_gripper.urdf.xacro \
-  initial_positions_file:=src/robot_arm_moveit_config/config/initial_positions.yaml \
+  initial_positions_file:=$PWD/src/robot_arm_moveit_config/config/initial_positions.yaml \
   > /tmp/generated_robot.urdf
 check_urdf /tmp/generated_robot.urdf
 

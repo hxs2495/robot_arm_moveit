@@ -2,7 +2,9 @@
 <robot name="generic_6dof_arm_with_gripper">
 
   <!-- Generic educational model. Units: meters, kilograms, radians.
-       Geometry is primitive-based, so no external mesh files are required. -->
+       Geometry is primitive-based, so no external mesh files are required.
+       Keep joint-limit scalars in explicit floating-point form because downstream
+       generators may copy them into strictly typed ROS 2 parameters. -->
 
   <material name="dark_grey"><color rgba="0.18 0.20 0.23 1.0"/></material>
   <material name="blue"><color rgba="0.12 0.38 0.72 1.0"/></material>
@@ -46,7 +48,7 @@
   <joint name="joint_1" type="revolute">
     <parent link="base_link"/><child link="link_1"/>
     <origin xyz="0 0 0.12"/><axis xyz="0 0 1"/>
-    <limit lower="-3.14159" upper="3.14159" effort="80" velocity="2.0"/>
+    <limit lower="-3.14159" upper="3.14159" effort="80.0" velocity="2.0"/>
     <dynamics damping="0.2" friction="0.05"/>
   </joint>
 
@@ -70,7 +72,7 @@
   <joint name="joint_2" type="revolute">
     <parent link="link_1"/><child link="link_2"/>
     <origin xyz="0 0 0.15"/><axis xyz="0 1 0"/>
-    <limit lower="-2.2" upper="2.2" effort="80" velocity="2.0"/>
+    <limit lower="-2.2" upper="2.2" effort="80.0" velocity="2.0"/>
     <dynamics damping="0.2" friction="0.05"/>
   </joint>
 
@@ -94,7 +96,7 @@
   <joint name="joint_3" type="revolute">
     <parent link="link_2"/><child link="link_3"/>
     <origin xyz="0.26 0 0"/><axis xyz="0 1 0"/>
-    <limit lower="-2.6" upper="2.6" effort="55" velocity="2.2"/>
+    <limit lower="-2.6" upper="2.6" effort="55.0" velocity="2.2"/>
     <dynamics damping="0.15" friction="0.04"/>
   </joint>
 
@@ -118,7 +120,7 @@
   <joint name="joint_4" type="revolute">
     <parent link="link_3"/><child link="link_4"/>
     <origin xyz="0.24 0 0"/><axis xyz="1 0 0"/>
-    <limit lower="-3.14159" upper="3.14159" effort="35" velocity="2.8"/>
+    <limit lower="-3.14159" upper="3.14159" effort="35.0" velocity="2.8"/>
     <dynamics damping="0.1" friction="0.03"/>
   </joint>
 
@@ -142,7 +144,7 @@
   <joint name="joint_5" type="revolute">
     <parent link="link_4"/><child link="link_5"/>
     <origin xyz="0.09 0 0"/><axis xyz="0 1 0"/>
-    <limit lower="-2.2" upper="2.2" effort="30" velocity="2.8"/>
+    <limit lower="-2.2" upper="2.2" effort="30.0" velocity="2.8"/>
     <dynamics damping="0.1" friction="0.03"/>
   </joint>
 
@@ -166,7 +168,7 @@
   <joint name="joint_6" type="revolute">
     <parent link="link_5"/><child link="link_6"/>
     <origin xyz="0.08 0 0"/><axis xyz="1 0 0"/>
-    <limit lower="-3.14159" upper="3.14159" effort="20" velocity="3.0"/>
+    <limit lower="-3.14159" upper="3.14159" effort="20.0" velocity="3.0"/>
     <dynamics damping="0.08" friction="0.02"/>
   </joint>
 
@@ -236,7 +238,7 @@
   <joint name="left_finger_joint" type="prismatic">
     <parent link="gripper_base"/><child link="left_finger"/>
     <origin xyz="0 0.052 0.045"/><axis xyz="0 1 0"/>
-    <limit lower="0" upper="0.025" effort="15" velocity="0.05"/>
+    <limit lower="0.0" upper="0.025" effort="15.0" velocity="0.05"/>
     <dynamics damping="0.1" friction="0.02"/>
   </joint>
 
@@ -261,9 +263,9 @@
   <joint name="right_finger_joint" type="prismatic">
     <parent link="gripper_base"/><child link="right_finger"/>
     <origin xyz="0 -0.052 0.045"/><axis xyz="0 -1 0"/>
-    <limit lower="0" upper="0.025" effort="15" velocity="0.05"/>
+    <limit lower="0.0" upper="0.025" effort="15.0" velocity="0.05"/>
     <dynamics damping="0.1" friction="0.02"/>
-    <mimic joint="left_finger_joint" multiplier="1" offset="0"/>
+    <mimic joint="left_finger_joint" multiplier="1.0" offset="0.0"/>
   </joint>
 
   <link name="gripper_tcp"/>

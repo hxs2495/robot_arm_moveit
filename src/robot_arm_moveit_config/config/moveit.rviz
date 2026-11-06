@@ -1,12 +1,12 @@
 Panels:
   - Class: rviz_common/Displays
-    Help Height: 70
+    Help Height: 0
     Name: Displays
     Property Tree Widget:
       Expanded:
         - /MotionPlanning1
       Splitter Ratio: 0.5
-    Tree Height: 135
+    Tree Height: 205
   - Class: rviz_common/Help
     Name: Help
   - Class: rviz_common/Views
@@ -125,7 +125,7 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
-        Loop Animation: true
+        Loop Animation: false
         Robot Alpha: 0.5
         Robot Color: 150; 50; 150
         Show Robot Collision: false
@@ -253,25 +253,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.6902098655700684
+      Distance: 1.9323172569274902
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.10000000149011612
-        Y: 0.25
-        Z: 0.30000001192092896
+        X: -0.06153755262494087
+        Y: -0.34476882219314575
+        Z: 0.27746298909187317
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.35499998927116394
+      Pitch: 0.42500025033950806
       Target Frame: base_link
       Value: Orbit (rviz_default_plugins)
-      Yaw: 5.250184059143066
+      Yaw: 3.0001707077026367
     Saved: ~
 Window Geometry:
   Displays:
