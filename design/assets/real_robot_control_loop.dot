@@ -1,0 +1,29 @@
+digraph RealRobotControlLoop {
+  graph [rankdir=LR, bgcolor="white", pad="0.25", nodesep="0.4", ranksep="0.8", fontname="Noto Sans CJK SC", label="从 Mock Hardware 切换到实机：控制闭环与安全链", labelloc=t, fontsize=22];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans CJK SC", fontsize=11, color="#334155", fillcolor="#f8fafc", margin="0.12,0.08"];
+  edge [fontname="Noto Sans CJK SC", fontsize=10, color="#475569", arrowsize=0.8];
+
+  moveit [label="MoveIt move_group\n规划 + 碰撞检查", fillcolor="#dbeafe", color="#2563eb"];
+  traj [label="FollowJointTrajectory\n轨迹目标", fillcolor="#e0e7ff", color="#4f46e5"];
+  jtc [label="JointTrajectoryController\n插值 + 误差监控", fillcolor="#ede9fe", color="#7c3aed"];
+  cm [label="Controller Manager\nread → update → write", fillcolor="#dcfce7", color="#16a34a"];
+  plugin [label="自定义 SystemInterface\non_init / read / write", fillcolor="#d1fae5", color="#059669"];
+  bus [label="通信层\nEtherCAT / CAN / TCP / 串口", fillcolor="#ccfbf1", color="#0f766e"];
+  drive [label="伺服驱动器与电机", fillcolor="#cffafe", color="#0891b2"];
+  encoder [label="编码器 / 状态字 / 故障码", fillcolor="#f0fdfa", color="#0d9488"];
+  joint [label="/joint_states\n真实反馈", fillcolor="#fef3c7", color="#d97706"];
+
+  safety [label="独立安全链\n急停、限位、抱闸、安全 PLC", shape=octagon, fillcolor="#fee2e2", color="#dc2626", penwidth=2];
+  watchdog [label="软件保护\n超时、跟随误差、速度/位置限制", fillcolor="#ffedd5", color="#ea580c"];
+
+  moveit -> traj -> jtc -> cm -> plugin -> bus -> drive;
+  drive -> encoder [label="机械运动 / 采样"];
+  encoder -> bus -> plugin [label="反馈", constraint=false];
+  plugin -> cm [label="state_interfaces", constraint=false];
+  cm -> joint -> moveit [label="当前状态", constraint=false];
+
+  watchdog -> jtc [label="监控"];
+  watchdog -> plugin [label="通信超时"];
+  safety -> drive [label="切断使能 / 制动", color="#dc2626", penwidth=2];
+  safety -> plugin [label="安全状态", color="#dc2626", style=dashed];
+}

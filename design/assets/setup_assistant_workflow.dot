@@ -1,0 +1,21 @@
+digraph SetupAssistantWorkflow {
+  graph [rankdir=LR, bgcolor="white", pad="0.25", nodesep="0.35", ranksep="0.55", fontname="Noto Sans CJK SC", label="MoveIt Setup Assistant 推荐配置顺序", labelloc=t, fontsize=22];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans CJK SC", fontsize=11, color="#334155", fillcolor="#f8fafc", margin="0.11,0.08"];
+  edge [color="#64748b", arrowsize=0.75];
+
+  urdf [label="1. 准备 URDF/Xacro\n连杆、关节、惯量、碰撞体", fillcolor="#dbeafe", color="#2563eb"];
+  validate [label="2. 命令行校验\ncheck_urdf / xacro", fillcolor="#e0e7ff", color="#4f46e5"];
+  load [label="3. Load Files\n从 ROS description 包加载", fillcolor="#ede9fe", color="#7c3aed"];
+  collision [label="4. Self-Collisions\n生成禁碰矩阵", fillcolor="#fae8ff", color="#a21caf"];
+  virtual [label="5. Virtual Joint\nworld → base_link (fixed)", fillcolor="#fce7f3", color="#db2777"];
+  arm [label="6. Planning Group: arm\n6 个转动关节 + KDL", fillcolor="#ffe4e6", color="#e11d48"];
+  gripper [label="7. Planning Group: gripper\nleft_finger_joint\nright 为 mimic", fillcolor="#ffedd5", color="#ea580c"];
+  poses [label="8. Robot Poses\nhome / ready / open / closed", fillcolor="#fef3c7", color="#d97706"];
+  eef [label="9. End Effector\ngroup=gripper\nparent=tool0 或 gripper_base", fillcolor="#fef9c3", color="#ca8a04"];
+  control [label="10. ros2_control\n控制接口与控制器", fillcolor="#dcfce7", color="#16a34a"];
+  author [label="11. Author Information", fillcolor="#d1fae5", color="#059669"];
+  generate [label="12. Generate Package\nsrc/robot_arm_moveit_config", fillcolor="#ccfbf1", color="#0f766e"];
+  verify [label="13. 构建与验收\ncolcon build + demo.launch.py", fillcolor="#cffafe", color="#0891b2"];
+
+  urdf -> validate -> load -> collision -> virtual -> arm -> gripper -> poses -> eef -> control -> author -> generate -> verify;
+}

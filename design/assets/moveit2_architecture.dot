@@ -1,0 +1,43 @@
+digraph MoveIt2Architecture {
+  graph [rankdir=LR, bgcolor="white", pad="0.25", nodesep="0.45", ranksep="0.75", fontname="Noto Sans CJK SC", label="MoveIt 2 核心架构（Sense → Plan → Act）", labelloc=t, fontsize=22];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans CJK SC", fontsize=12, color="#334155", fillcolor="#f8fafc", margin="0.12,0.08"];
+  edge [fontname="Noto Sans CJK SC", fontsize=10, color="#475569", arrowsize=0.8];
+
+  user [label="用户接口\nRViz / MoveGroupInterface\nPython/C++ 应用", fillcolor="#dbeafe", color="#2563eb"];
+
+  subgraph cluster_moveit {
+    label="move_group";
+    color="#93c5fd";
+    style="rounded,dashed";
+    bgcolor="#eff6ff";
+
+    model [label="RobotModel\nURDF + SRDF", fillcolor="#ffffff"];
+    state [label="CurrentStateMonitor\n/joint_states + TF", fillcolor="#ffffff"];
+    scene [label="PlanningSceneMonitor\n机器人状态 + 碰撞环境", fillcolor="#ffffff"];
+    ik [label="运动学插件\nKDL / IKFast / BioIK", fillcolor="#ffffff"];
+    planner [label="规划流水线\nOMPL / Pilz / CHOMP", fillcolor="#ffffff"];
+    execute [label="TrajectoryExecutionManager\n轨迹执行管理", fillcolor="#ffffff"];
+  }
+
+  controller [label="MoveIt Controller Manager\narm_controller 映射", fillcolor="#fef3c7", color="#d97706"];
+  jtc [label="JointTrajectoryController\nFollowJointTrajectory", fillcolor="#ffedd5", color="#ea580c"];
+  cm [label="ros2_control\nController Manager", fillcolor="#dcfce7", color="#16a34a"];
+  hw [label="硬件接口插件\nMock / Gazebo / 实机驱动", fillcolor="#d1fae5", color="#059669"];
+  robot [label="机械臂与夹爪\n电机 + 编码器", fillcolor="#ccfbf1", color="#0f766e"];
+
+  user -> planner [label="目标位姿 / 关节目标"];
+  model -> ik;
+  model -> scene;
+  state -> scene;
+  scene -> planner [label="碰撞与当前状态"];
+  ik -> planner [label="FK / IK"];
+  planner -> execute [label="时间参数化轨迹"];
+  execute -> controller;
+  controller -> jtc [label="/follow_joint_trajectory"];
+  jtc -> cm;
+  cm -> hw [label="command_interfaces"];
+  hw -> robot [label="总线命令"];
+  robot -> hw [label="编码器反馈"];
+  hw -> cm [label="state_interfaces"];
+  cm -> state [label="/joint_states", constraint=false];
+}
